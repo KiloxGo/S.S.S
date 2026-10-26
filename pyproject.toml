@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sjtu-sss"
+version = "0.1.0"
+description = "SJTU study-material collection toolkit"
+readme = "README.md"
+requires-python = ">=3.11.8"
+dependencies = ["requests>=2.32,<3", "beautifulsoup4>=4.12,<5", "py7zr>=1.0,<2", "rarfile>=4.2,<5"]
+
+[project.scripts]
+sss = "sss.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sss*"]

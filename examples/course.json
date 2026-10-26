@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "code": "EE3316",
+  "name": "电气工程基础",
+  "term": {"id": 30, "name": "2026-2027 Fall"},
+  "canvas_ids": [10001, 10002],
+  "teachers": ["请填写本班教师姓名"],
+  "aliases": ["EE3310"],
+  "share_ids": [],
+  "reviews_ids": []
+}
