@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 import shutil
+import sqlite3
 import stat
 import tarfile
 import tempfile
@@ -10,6 +11,54 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
 
 from .http import SourceError
+
+
+class State:
+    """Private bookkeeping, stored outside the study-material directory."""
+    def __init__(self, directory):
+        self.directory = Path(directory).resolve()
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.blobs = self.directory / "cache"
+        self.blobs.mkdir(exist_ok=True)
+        self.db = sqlite3.connect(self.directory / "state.sqlite")
+        self.db.execute("CREATE TABLE IF NOT EXISTS records (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+
+    def get(self, key, default=None):
+        row = self.db.execute("SELECT value FROM records WHERE key = ?", (key,)).fetchone()
+        return json.loads(row[0]) if row else default
+
+    def put(self, key, value):
+        self.db.execute("INSERT OR REPLACE INTO records VALUES (?, ?)", (key, json.dumps(value, ensure_ascii=False)))
+        self.db.commit()
+
+    def import_legacy(self, root):
+        for receipt in root.rglob("*.receipt.json"):
+            path = receipt.with_name(receipt.name.removesuffix(".receipt.json"))
+            if not path.is_file():
+                continue
+            old = json.loads(receipt.read_text(encoding="utf-8"))
+            with path.open("rb") as source:
+                digest = hashlib.file_digest(source, "sha256").hexdigest()
+            if digest != old.get("sha256"):
+                continue
+            rel = path.relative_to(root)
+            if rel.parts[0] == "canvas":
+                match = re.match(r"(\d+)-", path.name)
+                key = "canvas:file:" + match[1] if match else None
+            elif rel.parts[0] == "share" and path.parent.name.isdigit():
+                key = "share:material:" + path.parent.name
+            else:
+                key = None
+            if key:
+                blob = self.blobs / digest
+                if not blob.exists():
+                    shutil.copyfile(path, blob)
+                self.put("download:" + key, {"sha256": digest, "size": path.stat().st_size, "updated": old.get("updated")})
+
+
+def state_directory(root):
+    root = Path(root).resolve()
+    return root.parent.parent / ".local" / "state" / hashlib.sha256(str(root).encode()).hexdigest()[:16]
 
 
 def safe_name(value: str, limit=90) -> str:
@@ -29,9 +78,16 @@ def public_url(url):
 
 
 class Store:
-    def __init__(self, root: Path, secrets=()):
+    def __init__(self, root: Path, secrets=(), state=None):
         self.root = root.resolve()
         self.secrets = secrets
+        self._state = state
+
+    @property
+    def state(self):
+        if self._state is None:
+            self._state = State(state_directory(self.root))
+        return self._state
 
     def clean(self, obj):
         if isinstance(obj, dict):
@@ -57,14 +113,17 @@ class Store:
         part.write_text(self.clean(text), encoding="utf-8")
         part.replace(path)
 
-    def download(self, http, url, path, expected_size=None, updated=None):
+    def download(self, http, url, path, expected_size=None, updated=None, key=None):
         path.parent.mkdir(parents=True, exist_ok=True)
-        receipt = path.with_name(path.name + ".receipt.json")
-        if path.is_file() and receipt.is_file():
-            old = json.loads(receipt.read_text(encoding="utf-8"))
-            if old.get("updated") == updated and old.get("size") == path.stat().st_size and (expected_size is None or expected_size == path.stat().st_size):
-                with path.open("rb") as source:
+        key = "download:" + (key or public_url(url))
+        old = self.state.get(key)
+        if old and old.get("updated") == updated and (expected_size is None or expected_size == old.get("size")):
+            blob = self.state.blobs / old["sha256"]
+            if blob.is_file() and blob.stat().st_size == old.get("size"):
+                with blob.open("rb") as source:
                     if hashlib.file_digest(source, "sha256").hexdigest() == old.get("sha256"):
+                        # Also verify the exported copy; same-size local corruption must be repaired.
+                        shutil.copyfile(blob, path)
                         return {**old, "path": str(path.relative_to(self.root)).replace("\\", "/"), "status": "cached"}
         part = path.with_name(path.name + ".part")
         try:
@@ -85,10 +144,69 @@ class Store:
             part.replace(path)
             record = {"path": str(path.relative_to(self.root)).replace("\\", "/"), "size": size,
                       "sha256": sha.hexdigest(), "updated": updated, "status": "downloaded"}
-            self.json(receipt, record)
+            blob = self.state.blobs / record["sha256"]
+            shutil.copyfile(path, blob)
+            self.state.put(key, record)
             return record
         finally:
             part.unlink(missing_ok=True)
+
+    def deduplicate(self):
+        """Keep one copy of each content file and repair every generated local link."""
+        from urllib.parse import quote, unquote
+        import os
+        groups, aliases = {}, {}
+        def reading_page(path):
+            return (path.name == "README.md" and path.with_name("index.html").exists()) or (path.name == "index.html" and path.with_name("README.md").exists())
+        paths = sorted((p for p in self.root.rglob("*") if p.is_file() and not reading_page(p)),
+                       key=lambda p: ("solution" in p.parts, len(str(p)), str(p)))
+        for path in paths:
+            with path.open("rb") as source:
+                digest = hashlib.file_digest(source, "sha256").hexdigest()
+            if digest in groups:
+                aliases[path] = groups[digest]
+            else:
+                groups[digest] = path
+        for page in [*self.root.rglob("*.md"), *self.root.rglob("*.html")]:
+            text = page.read_text(encoding="utf-8")
+            def replace(match):
+                target = match[1]
+                if urlsplit(target).scheme or target.startswith("#"):
+                    return match[0]
+                absolute = (page.parent / unquote(target.split("#")[0])).resolve()
+                if absolute in aliases:
+                    relative = quote(os.path.relpath(aliases[absolute], page.parent).replace("\\", "/"), safe="/.")
+                    return match[0].replace(target, relative)
+                return match[0]
+            if page.suffix == ".md":
+                text = re.sub(r'\]\(([^\s)]+)(?:\s+"[^"]*")?\)', replace, text)
+            else:
+                text = re.sub(r'(?:href|src)="([^"]+)"', replace, text)
+            page.write_text(text, encoding="utf-8")
+        for duplicate in aliases:
+            duplicate.unlink()
+        return {str(k.relative_to(self.root)).replace("\\", "/"): str(v.relative_to(self.root)).replace("\\", "/") for k, v in aliases.items()}
+
+    def restore_referenced_files(self, previous_root):
+        """An unselected source may still link to a shared file retired by the selected source."""
+        from urllib.parse import unquote
+        from bs4 import BeautifulSoup
+        for page in [*self.root.rglob("*.md"), *self.root.rglob("*.html")]:
+            text = page.read_text(encoding="utf-8")
+            if page.suffix == ".md":
+                targets = re.findall(r'\]\(([^\s)]+)(?:\s+"[^"]*")?\)', text)
+            else:
+                targets = [n.get("href") or n.get("src") for n in BeautifulSoup(text, "html.parser").select("[href], [src]")]
+            for target in targets:
+                if not target or urlsplit(target).scheme or target.startswith("#"):
+                    continue
+                path = (page.parent / unquote(target.split("#")[0])).resolve()
+                if not path.is_relative_to(self.root) or path.exists():
+                    continue
+                previous = previous_root / path.relative_to(self.root)
+                if previous.is_file():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(previous, path)
 
 
 def archive_kind(path):
@@ -114,20 +232,21 @@ def validate_members(entries, max_bytes, max_files):
         seen.add(key)
 
 
-def extract_archive(path: Path, *, max_bytes=2 * 1024**3, max_files=10000, depth=0, budget=None):
+def extract_archive(path: Path, *, max_bytes=2 * 1024**3, max_files=10000, depth=0, budget=None, state=None):
     kind = archive_kind(path)
     if not kind:
         return []
     if depth >= 3:
         raise SourceError("Nested archive depth limit reached")
     budget = budget if budget is not None else {"bytes": max_bytes, "files": max_files}
+    state = state or State(state_directory(path.parent))
     target = path.with_name(path.name + ".extracted")
-    marker = target / ".sss-extracted.json"
     if target.is_symlink() or (target.exists() and any(p.is_symlink() for p in target.rglob("*"))):
         raise SourceError("Extraction folder contains a symbolic link")
     with path.open("rb") as source:
         digest = hashlib.file_digest(source, "sha256").hexdigest()
-    cached = marker.exists() and json.loads(marker.read_text(encoding="utf-8")).get("sha256") == digest
+    cache_key = "extraction:" + str(path.resolve())
+    cached = target.is_dir() and state.get(cache_key) == digest
     if not cached:
         if target.exists():
             raise SourceError("Existing extraction folder differs; move it aside before re-extracting")
@@ -137,9 +256,27 @@ def extract_archive(path: Path, *, max_bytes=2 * 1024**3, max_files=10000, depth
             try:
                 if kind == "zip":
                     with zipfile.ZipFile(path) as archive:
-                        entries = [(i.filename, i.file_size, stat.S_ISLNK(i.external_attr >> 16) or (stat.S_IFMT(i.external_attr >> 16) not in (0, stat.S_IFREG, stat.S_IFDIR))) for i in archive.infolist()]
+                        names = {}
+                        for info in archive.infolist():
+                            name = info.filename
+                            if not info.flag_bits & 0x800:
+                                try:
+                                    candidate = name.encode("cp437").decode("gb18030")
+                                    if re.search(r"[\u4e00-\u9fff]", candidate):
+                                        name = candidate
+                                except (UnicodeEncodeError, UnicodeDecodeError):
+                                    pass
+                            names[info.filename] = name
+                        entries = [(names[i.filename], i.file_size, stat.S_ISLNK(i.external_attr >> 16) or (stat.S_IFMT(i.external_attr >> 16) not in (0, stat.S_IFREG, stat.S_IFDIR))) for i in archive.infolist()]
                         validate_members(entries, budget["bytes"], budget["files"])
-                        archive.extractall(stage)
+                        for info in archive.infolist():
+                            destination = stage / names[info.filename]
+                            if info.is_dir():
+                                destination.mkdir(parents=True, exist_ok=True)
+                            else:
+                                destination.parent.mkdir(parents=True, exist_ok=True)
+                                with archive.open(info) as source, destination.open("wb") as out:
+                                    shutil.copyfileobj(source, out)
                 elif kind == "tar":
                     with tarfile.open(path) as archive:
                         entries = [(i.name, i.size, not (i.isfile() or i.isdir())) for i in archive.getmembers()]
@@ -165,8 +302,8 @@ def extract_archive(path: Path, *, max_bytes=2 * 1024**3, max_files=10000, depth
                     raise SourceError("Extracted size exceeds limits")
                 budget["bytes"] -= total
                 budget["files"] -= len(files)
-                (stage / ".sss-extracted.json").write_text(json.dumps({"sha256": digest}), encoding="utf-8")
                 shutil.move(str(stage), str(target))
+                state.put(cache_key, digest)
             except SourceError:
                 raise
             except Exception as exc:
@@ -180,5 +317,5 @@ def extract_archive(path: Path, *, max_bytes=2 * 1024**3, max_files=10000, depth
     extracted = [str(target)]
     for child in sorted(target.rglob("*")):
         if child.is_file() and archive_kind(child) and not any(p.name.endswith(".extracted") for p in child.relative_to(target).parents if p != Path(".")):
-            extracted += extract_archive(child, depth=depth + 1, budget=budget)
+            extracted += extract_archive(child, depth=depth + 1, budget=budget, state=state)
     return extracted

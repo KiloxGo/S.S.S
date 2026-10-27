@@ -88,7 +88,7 @@ def main(argv=None):
         mapping = validate_plan(json.loads(args.plan.read_text(encoding="utf-8"))) if args.plan else select_course(config, args.course, args.term)
         job = Sync(config, mapping, args.output)
         report = job.run(sources)
-        print(f"{report['status']}: {job.root / 'manifest.json'}")
+        print(f"{report['status']}: {job.root / 'index.html'}")
         for error in report["errors"]:
             print(f"  {error['scope']}: {error['message']}")
         return 2 if report["errors"] else 0

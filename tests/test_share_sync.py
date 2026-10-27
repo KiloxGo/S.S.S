@@ -20,7 +20,7 @@ def test_share_sync_related_courses_dedup_free_purchase_download_and_extract(tmp
         2: {"id": 2, "code": "EE3310", "latest_course": {"id": 1, "code": "EE3316"}},
     }
     materials = {
-        11: {"id": 11, "name": "Notes", "file_name": "notes.zip", "points": 0, "size": len(payloads[11]), "updated_at": "v1", "class": {"id": 5, "teacher": {"name": "Teacher"}}},
+        11: {"id": 11, "name": "Notes", "file_name": "notes.zip", "points": 0, "size": len(payloads[11]), "updated_at": "v1", "class": {"id": 5, "teacher": None}},
         12: {"id": 12, "file_name": "reference.pdf", "points": 0, "size": len(payloads[12]) + int(wrong_size), "updated_at": "v1", "has_purchased": True},
         13: {"id": 13, "points": 5},
         14: {"id": 14, "points": 0, "blocked": True},
@@ -65,13 +65,16 @@ def test_share_sync_related_courses_dedup_free_purchase_download_and_extract(tmp
     summary = report["sources"]["share"]["summary"]
     assert summary == {"courses": 2, "downloaded": 1 if wrong_size else 2, "skipped_paid": 1, "skipped_blocked": 1}
     assert purchases == [11] and sorted(downloads) == [11, 12]
-    assert (job.root / "share/5-Teacher/11/notes.zip.extracted/notes.txt").read_text() == "study notes"
-    exported = json.loads((job.root / "manifest.json").read_text(encoding="utf-8"))
+    assert (job.root / "share/Teacher/Notes-11/notes.zip.extracted/notes.txt").read_text() == "study notes"
+    assert (job.root / "share/Teacher/Notes-11/index.html").is_file()
+    assert not list(job.root.rglob("*.json"))
+    assert not list(job.root.rglob("*.zip"))
+    exported = job.state.get("report")
     assert "private-credential" not in json.dumps(exported)
     if wrong_size:
         assert exported["status"] == "partial"
         assert exported["errors"][0]["message"] == "Download size mismatch"
-        assert not (job.root / "share/none-unclassified/12/reference.pdf").exists()
+        assert not list(job.root.rglob("reference.pdf"))
     else:
         assert exported["status"] == "complete"
         again = Sync({"share_token": "private-credential"}, plan, tmp_path).run(["share"])

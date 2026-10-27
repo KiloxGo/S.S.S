@@ -139,7 +139,11 @@ class Share:
                 continue
             if not isinstance(group.get("materials"), list):
                 raise SourceError("传承交大 omitted a class material list")
-            materials.extend({**m, "class": m.get("class") or {k: v for k, v in group.items() if k != "materials"}} for m in group["materials"])
+            for material in group["materials"]:
+                inherited = {k: v for k, v in group.items() if k != "materials"}
+                merged = {**inherited, **(material.get("class") or {})}
+                merged["teacher"] = merged.get("teacher") or inherited.get("teacher")
+                materials.append({**material, "class": merged})
         return materials
 
     def classes(self, cid):

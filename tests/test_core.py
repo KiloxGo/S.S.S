@@ -132,7 +132,7 @@ def test_redaction_removes_secrets_and_signed_urls(tmp_path):
     assert clean["url"] == "https://example.com/file"
 
 
-def test_same_size_corruption_is_redownloaded(tmp_path):
+def test_same_size_corruption_is_repaired_from_verified_cache(tmp_path):
     class Fake:
         calls = 0
         def request(self, *args, **kwargs):
@@ -146,6 +146,10 @@ def test_same_size_corruption_is_redownloaded(tmp_path):
     store.download(http, "https://example.com/f", target, 4, "v1")
     assert store.download(http, "https://example.com/f", target, 4, "v1")["status"] == "cached"
     target.write_bytes(b"evil")
+    store.download(http, "https://example.com/f", target, 4, "v1")
+    assert target.read_bytes() == b"good" and http.calls == 1
+    blob = store.state.blobs / store.state.get("download:https://example.com/f")["sha256"]
+    blob.write_bytes(b"evil")
     store.download(http, "https://example.com/f", target, 4, "v1")
     assert target.read_bytes() == b"good" and http.calls == 2
 

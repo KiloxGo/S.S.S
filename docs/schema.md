@@ -1,33 +1,31 @@
-# 目录与清单 schema v1
+# 阅读目录 v2
 
-课程根目录：`<output>/<term.name 或 term.id>/<code>-<name>/`。Windows 非法字符和保留名称会转义；长名称截断并加哈希；下载文件及文件夹保留远端 ID。
+根目录为 `<output>/<学期>/<课程号>-<课程名>/`。每个阅读入口均有 `README.md` 和 `index.html` 两种表示；Markdown 页面链接到 Markdown，HTML 页面链接到 HTML。学习目录不包含程序生成的管理 JSON、receipt、SQLite、解压标记或字幕 TXT。原始课程资料本身若是 JSON，不会因扩展名而删除。
 
-`course.json` 为本次课程映射快照，包含 `schema_version`、`code`、`name`、`term`、`canvas_ids`、`teachers`，以及可选 `aliases`、`share_ids`、`reviews_ids`、`review_candidates`。
+## Canvas
 
-`manifest.json` 字段：
+`canvas/<空间ID>-<教师姓名>/files/` 保留课程文件夹层级，并有阅读索引。文件名保留远端 ID，避免同名覆盖。
 
-| 字段 | 含义 |
-| --- | --- |
-| `schema_version` | 当前为整数 1 |
-| `course` | 本次使用的课程映射 |
-| `started_at` / `finished_at` | UTC ISO 8601 时间 |
-| `status` | `running` / `complete` / `partial` |
-| `sources` | 各选中来源的 `status` 与计数 `summary` |
-| `artifacts` | 本次已下载或缓存命中的文件 |
-| `errors` | `{scope, message}`；scope 精确到来源、空间或资料 ID |
+`canvas/<空间ID>-<教师姓名>/assignments/<作业名>-<作业ID>/question/` 包含完整题面阅读页和题目附件。网页里的附件/图片链接会指向本地文件。页面没有文字时，阅读页说明题目在附件中；没有任何题目内容时明确说明平台未提供。
 
-artifact 包含课程根目录相对 `path`、字节数 `size`、`sha256`、服务端 `updated`、`status`（`downloaded` / `cached`），以及成功解压后的相对路径列表 `extracted`。下载成功但解压失败时，artifact 和 error 同时保留，原包可用。
+同一作业的 `solution/` 仅用于本人提交的附件、在线正文和提交链接，不包含评分或用户元数据；没有提交内容时不创建此目录。两个目录都通过页面链接访问，去重后也不会把题目与提交的含义混在一起。
 
-每次重跑清单代表本次结果；本地旧文件不自动删除。文件的 `.receipt.json` 保存校验和与更新时间。中断时 `manifest.json` 保持 `running`，已完成下载仍可在下次重跑时复用；`.part` 不会被当成完整文件。
+`subtitles/` 中只保留 SRT，录播内容索引位于教师目录的入口页。平台没有提供字幕的次数在根入口说明。
 
-Canvas 文件：`canvas/<canvas_id>/files/<folder_id-name>/.../<file_id-filename>`。作业：`assignments/<assignment_id-name>/`。文件 API 中所有可见条目均保存在 `files.json`，锁定文件也有元数据和清单错误记录。HTML 描述中的链接已去掉签名参数，需要重新下载时通过远程 ID 获取新链接。
+## 传承交大
 
-字幕：`canvas/<canvas_id>/subtitles/recordings.json` 保存录播列表。每条录播保存原始字幕 JSON；有文本才生成 `.srt` 和 `.txt`。JSON 中 `availability: unavailable` 或空字幕列表表示平台未提供字幕。平台错误与权限问题写入 `errors`。
+路径为 `share/<教师姓名>/<原上传标题>-<资料ID>/`。每份资料的阅读页保留标题、上传者写的说明、内容文件链接和原上传页面链接。未归档且没有教师信息的资料放在 `未标注教师`。
 
-传承交大：`share/<class_id-teacher>/<material_id>/<file_name>`，并保存 `material.json`。`<course_id>-materials.json` 包含所有教师和未归档资料条目，收费/屏蔽条目也保留供核对。课程关联会遍历站点显式提供的 `latest_course` / `deprecated_courses`。
+普通文件保留原文件名；成功解压的文件在 `<原文件名>.extracted/` 中，原包在私有缓存里。成功解压的嵌套原包同样从阅读目录移出；解压失败的原包仍保留。解压状态存入私有 SQLite，没有 `.sss-extracted.json`。
 
-选课社区：`reviews/courses.json` 保存匹配条目。每个教师分类目录包含 `<id>-course.json`、`<id>-reviews.json`、汇总 `all.json` 和可读 `README.md`。每条汇总保留原评价、来源课程 ID 和教师名单，原评价中的时间、评分等字段不丢弃。
+## 评价
 
-解压：原文件旁的 `<filename>.extracted/` 存放内容，`.sss-extracted.json` 存放原包 SHA-256。嵌套解压使用同样命名。ZIP 格式的 Office 文件（`.docx` / `.pptx` / `.xlsx`）保持文档本身，不视为用户压缩包。
+`reviews/own-teachers/`、`reviews/other-teachers/`、`reviews/unknown-teachers/` 各有 Markdown/HTML 正文汇总，只添加教师姓名和原文链接。评分、用户、投票等接口字段不导出。正文里作者自己写到的分数或考核规则属于评价内容，保留原文。
 
-所有元数据写入前移除凭据字段、已配置的凭据值及 URL query/fragment；下载的原文件不改写。本地凭据和采集结果均默认排除在 Git 外。
+## 去重和状态
+
+SHA-256 相同的内容文件只留一份，其余来源的阅读页链接到保留的文件。生成的两种阅读视图不互相去重。导入旧目录时，不保留旧编码文件名和新文件名造成的重复副本。
+
+凭据与课程映射仍作为 `.local/` 中的输入配置。下载记录、原始包缓存和同步报告存入 `<output 的父目录>/.local/state/<课程路径哈希>/state.sqlite` 及 `cache/`，不出现在资料树中。内部报告记录下载校验值、来源状态和错误；用户从根 `README.md` / `index.html` 查看简化结果。
+
+旧格式完整目录备份在该状态目录的 `legacy/`，上一版阅读目录在 `previous/`。读者使用稳定课程路径即可，无需接触这些状态文件。
