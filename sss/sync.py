@@ -212,7 +212,7 @@ class Sync:
                     self.store.json(directory / "material.json", detail)
                     # file_name carries the actual archive extension; display name may not.
                     filename = detail.get("file_name") or material.get("file_name") or detail.get("name") or str(mid)
-                    return self.artifact(api.http, url, directory / safe_name(filename), updated=detail.get("updated_at"))
+                    return self.artifact(api.http, url, directory / safe_name(filename), size=detail.get("size"), updated=detail.get("updated_at"))
                 if self.attempt(f"share/{cid}/material/{mid}", fetch):
                     counts["downloaded"] += 1
         return counts
