@@ -1,0 +1,24 @@
+S.S.S — 本地课程资料应用
+
+Windows：解压整个压缩包，打开 SSS 文件夹，双击 SSS.exe。不要只复制 exe；旁边的 _internal 是运行资源。
+macOS：解压后双击 SSS.app。公开分发前应由发布者完成 Apple Developer 签名与公证；当前开发构建不含开发者公证。
+
+首次使用：右上角“平台配置”填写 Canvas Token、传承交大 Token、选课社区 jcourse_session 原始值，然后加载课程。每门课程右侧可同步或打开本地文件夹。
+“学习提示词”提供课程指南、字幕考核、复习等任务。将课程目录交给 AI 后使用；课程目录自带 AGENTS.md、CLAUDE.md、SCHEMA.md 和 PROMPTS.md。
+
+数据位置：
+应用旁边存在 portable.flag 且该目录可写时，配置、课程、缓存保存在同级 SSS-Data。
+否则使用系统用户数据目录。macOS 从隔离位置启动时也会回退到用户数据目录。
+可在“平台配置”中查看和打开实际数据目录。
+移动整个应用目录和 SSS-Data 可一起迁移便携数据；SSS-Data 含个人凭据与学习资料，请勿把它作为新用户安装包分享。
+关闭窗口时会等待正在执行的同步安全结束；尚未开始的排队任务将取消。
+
+系统要求：
+Windows 10/11，原生窗口使用 Microsoft Edge WebView2 Runtime（部分较旧系统需先安装此组件）。
+macOS 按分发包的架构选择 Apple Silicon / Intel 版本。
+应用已包含 Python、前端资源及所需 Python 库，无需安装 Python、Node 或运行构建命令。
+Windows 包附带 7-Zip 解码器；macOS 使用系统的 bsdtar。ZIP、TAR、7Z 使用内置 Python 库解压。
+密码包、分卷缺失、锁定资料和收费资料不自动绕过。
+
+诊断日志位于实际数据目录的 .local/app.log。
+第三方组件信息见 ThirdPartyNotices；7-Zip 版权与许可另附。

@@ -63,8 +63,14 @@ def paginated(http, path, params=None):
 
 class Reviews:
     def __init__(self, cookie=""):
-        cookies = dict(part.strip().split("=", 1) for part in cookie.split(";") if "=" in part)
-        allowed = {k: v for k, v in cookies.items() if k in ("jcourse_session", "csrftoken", "acw_tc", "cdn_sec_tc")}
+        cookie = cookie.strip()
+        names = ("jcourse_session", "csrftoken", "acw_tc", "cdn_sec_tc")
+        # Raw session values can contain '=' padding; don't split them as cookie headers.
+        if cookie and ";" not in cookie and cookie.partition("=")[0].strip() not in names:
+            allowed = {"jcourse_session": cookie}
+        else:
+            cookies = dict(part.strip().split("=", 1) for part in cookie.split(";") if "=" in part)
+            allowed = {k: v for k, v in cookies.items() if k in names}
         self.http = Http(REVIEWS_BASE, cookies=allowed)
 
     def courses(self, plan):

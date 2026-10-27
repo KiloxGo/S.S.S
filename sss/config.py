@@ -2,11 +2,16 @@ import json
 import os
 from pathlib import Path
 
+from dotenv import dotenv_values
 
-def load_config(path: Path) -> dict:
+
+def load_config(path: Path, env_path: Path = Path(".env")) -> dict:
     config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    # Read only the chosen file; credentials containing ${...} must stay literal.
+    env = dotenv_values(env_path, encoding="utf-8-sig", interpolate=False) if env_path.exists() else {}
     for key in ("canvas_token", "share_token", "reviews_cookie"):
-        config[key] = os.getenv("SSS_" + key.upper(), config.get(key, ""))
+        name = "SSS_" + key.upper()
+        config[key] = os.environ.get(name, env.get(name, config.get(key, ""))) or ""
     return config
 
 

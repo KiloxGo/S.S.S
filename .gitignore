@@ -11,3 +11,12 @@ build/
 dist/
 data/
 *.part
+node_modules/
+/sss/web_static/
+/web/test-results/
+/web/playwright-report/
+.sss-env-*
+*.tsbuildinfo
+SSS-Data/
+.DS_Store
+Thumbs.db

@@ -31,6 +31,7 @@ def main(argv=None):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="S.S.S — SJTU 复习资料命令行工具")
     parser.add_argument("--config", type=Path, default=Path(".local/credentials.json"))
+    parser.add_argument("--env-file", type=Path, default=Path(".env"), help="认证环境文件；默认读取当前目录的 .env")
     commands = parser.add_subparsers(dest="command", required=True)
     courses = commands.add_parser("courses", help="列出本学期课程，同课程号合并多个 Canvas 空间")
     courses.add_argument("--term", help="Canvas 学期 ID 或完整学期名；默认按学期起止日期筛选")
@@ -47,9 +48,19 @@ def main(argv=None):
     sync.add_argument("--output", type=Path, default=Path("data"))
     sync.add_argument("--sources", default="canvas,subtitles,share,reviews")
     commands.add_parser("doctor", help="检查三个平台的认证；不回显凭据")
+    web = commands.add_parser("web", help="启动本地课程管理页面")
+    web.add_argument("--port", type=int, default=8765)
+    web.add_argument("--output", type=Path, default=Path("data"))
     args = parser.parse_args(argv)
     try:
-        config = load_config(args.config)
+        if args.command == "web":
+            try:
+                from .web import serve
+            except ImportError:
+                raise SourceError('网页依赖未安装，请运行 python -m pip install -e ".[web]"') from None
+            serve(args.config, args.env_file, args.output, args.port)
+            return 0
+        config = load_config(args.config, args.env_file)
         if args.command == "doctor":
             failures = 0
             checks = {

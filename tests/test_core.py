@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import stat
 import tarfile
 import zipfile
@@ -11,7 +12,7 @@ import pytest
 import requests
 
 from sss.canvas import Canvas, group_courses, srt
-from sss.communities import Share, free_material, paginated, teacher_bucket
+from sss.communities import Reviews, Share, free_material, paginated, teacher_bucket
 from sss.http import Http, SourceError
 from sss.storage import Store, extract_archive, safe_name
 from sss.sync import Sync, validate_plan
@@ -95,6 +96,24 @@ def test_review_classification():
     assert teacher_bucket([{"name": "其他"}], ["徐潇源"]) == "other-teachers"
     assert teacher_bucket([], ["徐潇源"]) == "unknown-teachers"
     assert teacher_bucket([{"name": "其他"}], []) == "unknown-teachers"
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("raw-session", {"jcourse_session": "raw-session"}),
+    ("raw-session==", {"jcourse_session": "raw-session=="}),
+    ("  raw-session  ", {"jcourse_session": "raw-session"}),
+    ("jcourse_session=raw-session==", {"jcourse_session": "raw-session=="}),
+    ("jcourse_session=raw-session; csrftoken=csrf; acw_tc=edge; cdn_sec_tc=cdn; other=ignored",
+     {"jcourse_session": "raw-session", "csrftoken": "csrf", "acw_tc": "edge", "cdn_sec_tc": "cdn"}),
+    ("", {}),
+    ("   ", {}),
+])
+def test_reviews_accepts_raw_session_and_existing_cookie_headers(value, expected):
+    api = Reviews(value)
+    assert api.http.session.cookies.get_dict() == expected
+    for cookie in api.http.session.cookies:
+        assert cookie.domain == "course.sjtu.plus"
+        assert cookie.secure
 
 
 def test_pagination_continues_when_server_caps_page_size():
@@ -249,8 +268,8 @@ def test_rar_hardlink_rejected_before_decoder(tmp_path, monkeypatch):
     class Member:
         filename, file_size, file_redir = "hardlink", 0, (4, 0, "../../target")
         def is_symlink(self): return False
-        def isfile(self): return True
-        def isdir(self): return False
+        def is_file(self): return True
+        def is_dir(self): return False
     class Archive:
         def __init__(self, *a): pass
         def __enter__(self): return self
@@ -262,6 +281,86 @@ def test_rar_hardlink_rejected_before_decoder(tmp_path, monkeypatch):
     path.write_bytes(b"fixture")
     with pytest.raises(SourceError, match="links"):
         extract_archive(path)
+
+
+@pytest.mark.parametrize("version", [3, 5])
+def test_rar_regular_files_use_real_library_metadata_api(tmp_path, monkeypatch, version):
+    import rarfile
+    # Use real metadata objects so a removed library method cannot be hidden by a stub.
+    if version == 3:
+        member = rarfile.Rar3Info()
+        member.type = rarfile.RAR_BLOCK_FILE
+        member.flags, member.host_os, member.mode = 0, rarfile.RAR_OS_WIN32, 0
+    else:
+        member = rarfile.Rar5FileInfo()
+        member.file_flags = 0
+    member.filename, member.file_size = "notes.txt", len(b"study notes")
+
+    class Archive:
+        def __init__(self, *a): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def infolist(self): return [member]
+        def extractall(self, stage): (stage / "notes.txt").write_bytes(b"study notes")
+
+    monkeypatch.setattr(rarfile, "RarFile", Archive)
+    path = tmp_path / "notes.rar"
+    path.write_bytes(b"fixture")
+    assert Path(extract_archive(path)[0], "notes.txt").read_text() == "study notes"
+
+
+@pytest.mark.parametrize("exception,message", [
+    ("NeedFirstVolume", "缺少首卷"),
+    ("RarCannotExec", "解压工具"),
+    ("PasswordRequired", "需要密码"),
+    ("AttributeError", "RAR archive extraction failed (AttributeError)"),
+])
+def test_rar_failure_reports_actual_cause(tmp_path, monkeypatch, exception, message):
+    import rarfile
+    error_type = AttributeError if exception == "AttributeError" else getattr(rarfile, exception)
+    def fail(*args):
+        if exception == "NeedFirstVolume":
+            raise error_type("internal diagnostic", 1)
+        raise error_type("internal diagnostic")
+    monkeypatch.setattr(rarfile, "RarFile", fail)
+    path = tmp_path / "notes.rar"
+    path.write_bytes(b"fixture")
+    with pytest.raises(SourceError, match=re.escape(message)):
+        extract_archive(path)
+
+
+@pytest.mark.parametrize("payload,error", [(b"abc", None), (b"abcd", "超过声明大小"), (b"ab", "内容不完整"), (b"abd", "校验失败")])
+def test_bsdtar_fallback_preserves_argument_order_and_checks_output(tmp_path, monkeypatch, payload, error):
+    import rarfile
+    import zlib
+    from types import SimpleNamespace
+    member = SimpleNamespace(filename="notes.txt", file_size=3, file_redir=None, CRC=zlib.crc32(b"abc"),
+                             is_file=lambda: True, is_dir=lambda: False, is_symlink=lambda: False)
+    class Archive:
+        def __init__(self, *a): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def infolist(self): return [member]
+        def extractall(self, stage): raise rarfile.BadRarFile("decoder argument failure")
+    path = tmp_path / "notes.rar"
+    path.write_bytes(b"fixture")
+    class Process:
+        def __init__(self, command, **kwargs):
+            assert command[command.index("-f") + 1] == str(path.resolve())
+            self.stdout = io.BytesIO(payload)
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def wait(self, **kwargs): return 0
+        def kill(self): pass
+    monkeypatch.setattr(rarfile, "RarFile", Archive)
+    monkeypatch.setattr(rarfile, "tool_setup", lambda: SimpleNamespace(setup={"open_cmd": ("BSDTAR_TOOL",)}))
+    monkeypatch.setattr("sss.storage.subprocess.Popen", Process)
+    if error:
+        with pytest.raises(SourceError, match=error):
+            extract_archive(path)
+        assert not path.with_name("notes.rar.extracted").exists()
+    else:
+        assert Path(extract_archive(path)[0], "notes.txt").read_bytes() == b"abc"
 
 
 def test_filename_keeps_extension_and_reserved_names():

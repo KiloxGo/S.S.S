@@ -15,6 +15,7 @@ from .config import credential_values
 from .content import html_markdown, link, sanitize_html, write_pair
 from .http import SourceError
 from .storage import State, Store, archive_kind, extract_archive, safe_name
+from .study import write_study_files
 
 
 def validate_plan(plan):
@@ -38,13 +39,18 @@ def validate_plan(plan):
     return plan
 
 
+def course_directory(plan, output):
+    term = safe_name(str(plan["term"].get("name") or plan["term"]["id"]))
+    return Path(output).resolve() / term / safe_name(plan["code"] + "-" + plan["name"], 70)
+
+
 class Sync:
-    def __init__(self, config, plan, output):
+    def __init__(self, config, plan, output, on_progress=None):
         self.config = config
         self.plan = validate_plan(plan)
         self.output = Path(output).resolve()
-        term = safe_name(str(plan["term"].get("name") or plan["term"]["id"]))
-        self.root = self.output / term / safe_name(plan["code"] + "-" + plan["name"], 70)
+        self.root = course_directory(plan, self.output)
+        self.on_progress = on_progress
         key = hashlib.sha256(str(self.root).encode()).hexdigest()[:16]
         self.state = State(self.output.parent / ".local" / "state" / key)
         self.store = Store(self.root, credential_values(config), self.state)
@@ -54,6 +60,8 @@ class Sync:
 
     def checkpoint(self):
         self.state.put("running-report", self.store.clean(self.manifest))
+        if self.on_progress:
+            self.on_progress(self.manifest)
 
     def attempt(self, scope, fn):
         try:
@@ -291,7 +299,8 @@ class Sync:
         return counts
 
     def index(self):
-        text = f"# {self.plan['code']} · {self.plan['name']}\n\n## Canvas\n\n"
+        write_study_files(self.store, self.root, self.plan)
+        text = f"# {self.plan['code']} · {self.plan['name']}\n\n## AI 学习入口\n\n先读 [AGENTS.md](AGENTS.md) 了解学习约定，再读本页的来源与同步结果；目录结构见 [SCHEMA.md](SCHEMA.md)，具体任务见 [PROMPTS.md](PROMPTS.md)。Claude 可从 [CLAUDE.md](CLAUDE.md) 开始。\n\n个人与 AI 学习笔记放在 `notes/`，后续同步会保留。\n\n## Canvas\n\n"
         for base in sorted((self.root / "canvas").glob("*")):
             if not base.is_dir():
                 continue
@@ -341,6 +350,8 @@ class Sync:
             self.store = Store(self.root, credential_values(self.config), self.state)
             for source in sources:
                 self.current_source = source
+                self.manifest["active_source"] = source
+                self.checkpoint()
                 print(f"[{source}] collecting...", flush=True)
                 before = len(self.manifest["errors"])
                 summary = self.attempt(source, getattr(self, source))

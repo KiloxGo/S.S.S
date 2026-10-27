@@ -4,9 +4,11 @@ import re
 import shutil
 import sqlite3
 import stat
+import subprocess
 import tarfile
 import tempfile
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
 
@@ -157,6 +159,9 @@ class Store:
         import os
         groups, aliases = {}, {}
         def reading_page(path):
+            relative = path.relative_to(self.root)
+            if relative.parts[0] == "notes" or (path.parent == self.root and path.name in {"AGENTS.md", "CLAUDE.md", "SCHEMA.md", "PROMPTS.md"}):
+                return True
             return (path.name == "README.md" and path.with_name("index.html").exists()) or (path.name == "index.html" and path.with_name("README.md").exists())
         paths = sorted((p for p in self.root.rglob("*") if p.is_file() and not reading_page(p)),
                        key=lambda p: ("solution" in p.parts, len(str(p)), str(p)))
@@ -232,6 +237,43 @@ def validate_members(entries, max_bytes, max_files):
         seen.add(key)
 
 
+def extract_rar(archive, path, stage):
+    import rarfile
+    try:
+        archive.extractall(stage)
+        return
+    except rarfile.BadRarFile:
+        # rarfile 4.5 constructs `bsdtar -f -- archive`, treating '--' as the
+        # archive filename. Use stdout-only decoding with explicit argument order.
+        if rarfile.tool_setup().setup["open_cmd"][0] != "BSDTAR_TOOL":
+            raise
+    for member in archive.infolist():
+        destination = stage / member.filename
+        if member.is_dir():
+            destination.mkdir(parents=True, exist_ok=True)
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        command = [rarfile.BSDTAR_TOOL, "-x", "--to-stdout", "-f", str(path.resolve()), "--", member.filename]
+        with destination.open("wb") as output, tempfile.TemporaryFile() as diagnostics:
+            with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=diagnostics) as process:
+                size, crc = 0, 0
+                try:
+                    while chunk := process.stdout.read(min(256 * 1024, member.file_size - size + 1)):
+                        size += len(chunk)
+                        if size > member.file_size:
+                            raise SourceError("RAR 解压内容超过声明大小，已停止解压。")
+                        crc = zlib.crc32(chunk, crc)
+                        output.write(chunk)
+                    if process.wait(timeout=90) != 0 or size != member.file_size:
+                        raise SourceError("RAR 解码失败或内容不完整，原始压缩包已保留。")
+                    if member.CRC is not None and crc != member.CRC:
+                        raise SourceError("RAR 解压文件校验失败，原始压缩包已保留。")
+                except BaseException:
+                    process.kill()
+                    process.wait()
+                    raise
+
+
 def extract_archive(path: Path, *, max_bytes=2 * 1024**3, max_files=10000, depth=0, budget=None, state=None):
     kind = archive_kind(path)
     if not kind:
@@ -291,9 +333,9 @@ def extract_archive(path: Path, *, max_bytes=2 * 1024**3, max_files=10000, depth
                 else:
                     import rarfile
                     with rarfile.RarFile(path) as archive:
-                        entries = [(i.filename, i.file_size, bool(i.file_redir) or i.is_symlink() or not (i.isfile() or i.isdir())) for i in archive.infolist()]
+                        entries = [(i.filename, i.file_size, bool(i.file_redir) or i.is_symlink() or not (i.is_file() or i.is_dir())) for i in archive.infolist()]
                         validate_members(entries, budget["bytes"], budget["files"])
-                        archive.extractall(stage)
+                        extract_rar(archive, path, stage)
                 files = list(stage.rglob("*"))
                 if any(p.is_symlink() or p.resolve().is_relative_to(stage.resolve()) is False for p in files):
                     raise SourceError("Unsafe extracted file")
@@ -307,7 +349,15 @@ def extract_archive(path: Path, *, max_bytes=2 * 1024**3, max_files=10000, depth
             except SourceError:
                 raise
             except Exception as exc:
-                raise SourceError(f"Archive extraction failed ({type(exc).__name__}); RAR may require unrar/7-Zip") from None
+                if kind == "rar":
+                    import rarfile
+                    if isinstance(exc, rarfile.NeedFirstVolume):
+                        raise SourceError("RAR 分卷包缺少首卷，原始压缩包已保留。") from None
+                    if isinstance(exc, rarfile.RarCannotExec):
+                        raise SourceError("未找到可用的 RAR 解压工具，请安装 unrar、unar 或 7-Zip 并加入 PATH。") from None
+                    if isinstance(exc, (rarfile.PasswordRequired, rarfile.RarWrongPassword)):
+                        raise SourceError("RAR 压缩包需要密码，原始压缩包已保留。") from None
+                raise SourceError(f"{kind.upper()} archive extraction failed ({type(exc).__name__})") from None
     else:
         files = [p for p in target.rglob("*") if ".extracted" not in str(p.relative_to(target).parent)]
         budget["bytes"] -= sum(p.stat().st_size for p in files if p.is_file())

@@ -1,118 +1,177 @@
-# S.S.S
+<div align="center">
+  <img src="docs/images/logo.svg" width="80" alt="S.S.S">
+  <h1>S.S.S</h1>
+  <p><strong>SJTU速通套件</strong></p>
+  <p>把 Canvas、传承交大和选课社区的资料，整理成一份可以慢慢读的本地课程档案。</p>
 
-上海交通大学复习资料采集工具。Python 命令行后端，汇集 Canvas、传承交大和选课社区的学习内容。
+  <p>
+    <a href="https://github.com/KiloxGo/S.S.S/actions/workflows/test.yml"><img src="https://github.com/KiloxGo/S.S.S/actions/workflows/test.yml/badge.svg" alt="tests"></a>
+    <img src="https://img.shields.io/badge/Python-3.11.8%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11.8+">
+    <img src="https://img.shields.io/badge/Node-20.19%2B%20%7C%2022.12%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node 20.19+ / 22.12+">
+    <img src="https://img.shields.io/badge/local--first-426a4d?style=flat-square" alt="local-first">
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4c566a?style=flat-square" alt="Windows / macOS / Linux">
+  </p>
 
-## 输出直接阅读
+  <p>
+    <a href="#快速开始">快速开始</a> ·
+    <a href="#命令行">命令行</a> ·
+    <a href="#本地页面">本地页面</a> ·
+    <a href="#用-ai-学习">用 AI 学习</a> ·
+    <a href="#文档">文档</a>
+  </p>
+</div>
 
-同步完成后，打开课程目录的 **`index.html`** 浏览，或从 **`README.md`** 开始让 agent 阅读。HTML 页之间链接到 HTML，Markdown 页之间链接到 Markdown。资料目录不再生成课程清单 JSON、文件元数据 JSON、下载 receipt 或字幕 JSON/TXT。
+<p align="center">
+  <img src="docs/images/desktop-courses.png" alt="桌面应用：课程列表、同步状态和课程文件夹入口" width="100%">
+  <sub>桌面应用：课程列表、一键同步与学习提示词</sub>
+</p>
+
+<details>
+<summary>平台配置与便携数据目录</summary>
+<p align="center">
+  <img src="docs/images/desktop-settings.png" alt="桌面应用的平台凭据配置与演示数据目录" width="100%">
+</p>
+</details>
+
+## 它是什么
+
+**S.S.S** 是一个本地优先的课程资料采集工具。它从 Canvas 拉取课件、作业与录播字幕，从传承交大收集复习资料，从选课社区整理教师评价，按学期和课程归档为可直接浏览的 HTML / Markdown，并附带一套给 AI Agent 的学习提示词。
+
+- **一处归档** —— 三个来源的资料按课程归并，同学期、同课程号的多个 Canvas 空间自动合并。
+- **双阅读入口** —— 每个阅读层级都生成 `index.html`（人读）与 `README.md`（Agent 读），链接各自闭环。
+- **不重复存储** —— 按 SHA-256 去重；跨空间、跨来源的相同文件只留一份，其他位置链接过去。
+- **本地优先** —— 凭据只存在本机 `.env`，不写进阅读页；页面只监听 `127.0.0.1`。
+- **增量且可恢复** —— 下载缓存与状态 SQLite；单个来源失败不影响其他来源，重跑即可继续。
+- **为 AI 学习而设** —— 每门课生成 `AGENTS.md`、`CLAUDE.md`、`SCHEMA.md`、`PROMPTS.md`，内置六种学习任务。
+
+## 快速开始
+
+桌面版面向 Windows 和 macOS：解压对应系统的便携包，双击应用，在“平台配置”中填写凭据即可使用，无需安装 Python 或 Node.js。数据可随 `SSS-Data` 目录迁移。当前为未配置发布者签名的开发构建；构建方式、数据位置和系统要求见 [`docs/desktop-packaging.md`](docs/desktop-packaging.md)。
+
+以下是源码运行方式。
+
+需要 Python 3.11.8+；网页界面还需要 Node.js 20.19+ 或 22.12+。
+
+```bash
+git clone https://github.com/KiloxGo/S.S.S.git
+cd S.S.S
+
+python3 -m venv .venv
+source .venv/bin/activate          # Windows PowerShell: .\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[web]"
+```
+
+安装后也可以直接使用 `sss` 命令；下文统一写作 `python -m sss`。解压 RAR 需要 PATH 中有 `unrar` 或 `unar`，ZIP / TAR / 7Z 无需外部命令。
+
+复制凭据模板，填写你要使用的平台；只填一个也可以：
+
+```bash
+cp .env.example .env               # Windows PowerShell: Copy-Item .env.example .env
+```
+
+```bash
+python -m sss doctor                 # 未配置的平台会提示缺失，不影响已配置来源
+python -m sss sync --course EE3316
+```
+
+资料会写到 `data/<学期>/<课程号>-<课程名>/`。打开其中的 `index.html` 即可浏览，或让 Agent 从 `README.md` 开始阅读。
+
+## 输出结构
 
 ```text
 data/2026-2027 Fall/EE3316-电气工程基础/
-  index.html                      # 人阅读的入口
-  README.md                       # agent 阅读的入口
-  canvas/
-    93532-徐潇源/
-      index.html / README.md
-      files/                      # 课程文件、可读文件索引
-      assignments/
-        HW2-1-426150/
-          question/               # 题面正文、题目附件
-            index.html / README.md
-            13858939-HW2-1new.docx
-          solution/               # 我提交的附件、在线正文或链接
-            index.html / README.md
-            13913405-电气工程基础hw2-1.pdf
-      subtitles/                  # 仅 SRT
-    93538-宋依群/...
-  share/
-    25-26秋电工基1期末考试题目回忆-54277/
-      index.html / README.md
-      2025-2026电气工程基础期末考题回忆.pdf
-  reviews/
-    own-teachers/                 # 本班教师评价正文
-      index.html / README.md
-    other-teachers/               # 其他教师评价正文
-    unknown-teachers/
+├── index.html / README.md        # 人 / Agent 的阅读入口
+├── canvas/
+│   └── 93532-徐潇源/
+│       ├── files/                # 课件与课程文件
+│       ├── assignments/          # 作业：question/ 与 solution/ 分开
+│       └── subtitles/            # 录播字幕（仅 SRT）
+├── share/                        # 传承交大资料（按原上传标题）
+└── reviews/                      # 选课社区教师评价
 ```
 
-- Canvas 文件夹带教师姓名和空间 ID；学生和旁听身份的同课程空间可以一同采集。本班教师默认只取学生身份空间的教师。
-- 作业页面中直接书写的题目会保留段落、表格、列表、数学文本和图片链接，转成 HTML/Markdown。附件题的附件归入 `question`，本人提交的文件和在线正文归入 `solution`；未提交时不创建空的 `solution`。
-- 文件内容按 SHA-256 去重，跨空间、课件、作业和传承资料的相同文件只保留一份；其他位置的阅读页会链接到保留的文件。HTML 和 Markdown 是特意保留的两种阅读视图，不当作重复文件删除。
-- 字幕只输出 SRT，录播列表链接放在教师目录的阅读页中。
-- 评论只整理正文、教师姓名和原评价链接，不导出分数、用户 ID、时间戳、投票等接口字段。
-- 所有教师的传承资料集中放在 `share/` 下，子目录使用原上传标题，不再分教师；原始文件名仍保留。成功解压后展示解压内容，原压缩包留在私有缓存；无法解压时保留原包并报告原因。中文 GBK ZIP 文件名会尝试正确解码。
+## 命令行
 
-## 安装
+| 命令 | 说明 |
+| --- | --- |
+| `python -m sss doctor` | 检查三个平台的认证，不回显凭据 |
+| `python -m sss courses` | 列出本学期课程；`--all` 列出全部学期，`--term` 指定学期 |
+| `python -m sss plan --course EE3316 --out .local/EE3316.json` | 生成可编辑的课程映射 |
+| `python -m sss sync --plan .local/EE3316.json` | 按映射同步 |
+| `python -m sss sync --course EE3316 --output D:\Study` | 一步同步到指定目录 |
+| `python -m sss web` | 启动本地页面（默认 `127.0.0.1:8765`） |
 
-Python 3.11.8 或更新版本。Windows PowerShell：
+只刷新部分来源：
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -e .
-```
-
-下面命令中的 `python` 应使用此虚拟环境，或替换成 `.\.venv\Scripts\python`。安装后也可使用 `sss` 命令。
-
-RAR 通常需要 PATH 中有 `unrar` 或 `unar`。ZIP、TAR、7Z 不需要外部命令。加密包和分卷包不会猜密码或自动拼接。
-
-## 本地认证
-
-复制 `credentials.example.json` 到 `.local/credentials.json` 并填写本地凭据。这些 JSON 是工具输入配置，不是导出的学习资料：
-
-```json
-{
-  "canvas_token": "",
-  "share_token": "",
-  "reviews_cookie": "jcourse_session=..."
-}
-```
-
-- Canvas：`oc.sjtu.edu.cn` 账户设置中的 Token。
-- 传承交大：登录 `share.dyweb.sjtu.cn` 后，在开发者工具 Application → Local Storage 读取 `token`。API 使用 `Auth` 请求头，Google Cookie 不能代替。
-- 选课社区：`course.sjtu.plus` 的 `jcourse_session`；可附带同域 `csrftoken`、`acw_tc`、`cdn_sec_tc`，其他域 Cookie 不使用。
-
-环境变量 `SSS_CANVAS_TOKEN`、`SSS_SHARE_TOKEN`、`SSS_REVIEWS_COOKIE` 可覆盖文件。`--config` 放在子命令之前。凭据不会写进阅读页，签名 URL 的凭据参数不保留，跨域重定向会剥离认证头。下载的原始学习文件不作凭据内容改写。
-
-## 采集课程
-
-```powershell
-python -m sss doctor
-python -m sss courses
-python -m sss courses --all
-python -m sss courses --term 30
-python -m sss plan --course EE3316 --out .local/EE3316.json
-python -m sss sync --plan .local/EE3316.json
+```bash
 python -m sss sync --plan .local/EE3316.json --sources canvas,subtitles
-python -m sss sync --course EE3316 --output D:\Study
 ```
 
-本学期按 Canvas 的学期起止日期筛选。同学期、同课程号的空间自动归并；也可用任一 Canvas ID 选中整个归并组。
+退出码 `0` 表示所选来源完成，`2` 表示有未取到的内容或配置问题。映射格式见 [`examples/course.json`](examples/course.json)；目录细节见 [`docs/schema.md`](docs/schema.md)。
 
-映射格式见 [`examples/course.json`](examples/course.json)。`canvas_ids` 指定空间，`canvas_spaces` 保存各空间教师和身份，`teachers` 指定用于评论分类的本班教师。`aliases` 用于历史课程号，`share_ids`、`reviews_ids` 可明确指定社区课程条目。已有映射不会被覆盖。
+## 本地页面
 
-`plan` 会将同名的其他课程号列入 `review_candidates`，供核对后填入 `aliases`。例如 EE3316 的历史参考评价在 EE3310「电气工程基础（1）」下，可以填写 `"aliases": ["EE3310"]`；不会自动合并 ECE3600J 或 EE3311「电气工程基础（2）」。传承交大自身提供的旧新课程关联会自动遍历。
+主页直接列出当前学期的课程，右侧按钮分别用于同步和打开本机课程目录；同步状态、失败原因和已有资料都在同一页展示。
 
-退出码 `0` 表示选中来源完成，`2` 表示有未取得内容或配置问题。阅读入口底部用可读文字列出状态与原因。某个来源失败后仍继续其他来源；只刷新部分来源时保留其他来源的阅读内容。
+- 右上角“平台配置”填写凭据，保存到本机 `.env`；已保存的值不会回传。
+- 同步在后台串行执行，刷新页面不影响任务，服务重启后可恢复上次结果。
+- “学习提示词”提供课程指南、字幕中的考核与安排、考前复习、作业与实验清单、知识点辅导、同步后更新六种任务。
 
-## 缓存、迁移与边界
+首次使用网页界面时，先构建静态资源再启动：
 
-下载缓存、校验信息和内部同步状态存入输出目录旁 `.local/state/<课程路径哈希>/` 下的 SQLite 和内容缓存，资料文件旁没有 receipt。缓存命中仍校验 SHA-256；字节数不符的下载不会替换完整文件。
+```bash
+npm --prefix web ci
+npm --prefix web run build
+python -m sss web
+```
 
-首次更新旧格式目录时，先将旧 receipt 导入缓存，再生成新格式。旧目录完整备份到私有状态目录的 `legacy/`，不会继续显示在课程目录。后续更新先在临时目录生成，再替换课程目录，上一版保存在 `previous/`。`.local/`、`data/`、`.env*`、虚拟环境均被 Git 忽略。不要同时向同一个课程目录同步。
+需要改端口或资料目录时，使用 `--port 8766`、`--output D:\Study`。前端开发时同时运行 `python -m sss web` 与 `npm --prefix web run dev`，Vite 会把 `/api` 转发到 8765。
 
-只获取账号可访问的内容。Canvas 标记为 `hidden_for_user` 的附件可能只是不出现在文件导航中，仍允许从作业链接访问；真正 `locked_for_user` 的文件不下载。仅覆盖当前 Canvas 8329 LTI 对接的 `v.sjtu.edu.cn` 字幕服务，不下载视频本体或提交作业。
+<details>
+<summary>手机布局</summary>
+<p align="center">
+  <img src="docs/images/web-mobile.png" width="300" alt="手机端课程列表">
+</p>
+</details>
 
-传承交大只获取明确为 0 积分的资料，并在购买前重新检查价格；购买请求不自动重试。接口没有可核实的原子价格上限参数，仍无法消除两次请求之间服务端改价的竞态。默认每个文件限 4 GiB；每个根压缩包连同嵌套内容限 2 GiB、10,000 项、3 层。解压拒绝越界路径、链接和大小写冲突。
+## AI 辅助学习
 
-目录细节见 [`docs/schema.md`](docs/schema.md)。
+同步会在每门课根目录生成 `AGENTS.md`、`CLAUDE.md`、`SCHEMA.md` 和 `PROMPTS.md`。把课程文件夹交给 Agent，先读学习约定，再按 `README.md` / `SCHEMA.md` 查资料；重点核查字幕里的考试、评分、实验、签到、范围和作业注意点，结论需带文件、页码或字幕时间戳。
 
-## 验证
+个人的学习笔记放在课程 `notes/`，后续同步会保留；已有手写的 Agent 说明也不会被模板覆盖。任务细节见 [`docs/study-prompts.md`](docs/study-prompts.md)。
 
-```powershell
-python -m pip install pytest
+## 凭据与边界
+
+<details>
+<summary>三个平台凭据怎么填</summary>
+
+- `SSS_CANVAS_TOKEN`：`oc.sjtu.edu.cn` 账户设置中的 API Token，只填原值，不加 `Bearer `。
+- `SSS_SHARE_TOKEN`：登录 `share.dyweb.sjtu.cn` 后，在开发者工具 Application → Local Storage 读取 `token`，去掉 JSON 外层双引号。
+- `SSS_REVIEWS_COOKIE`：直接粘贴 `course.sjtu.plus` 的 `jcourse_session` 原始值，程序会自动补上 Cookie 名。
+
+</details>
+
+`.env`、`data/` 与 `.local/` 均被 Git 忽略。凭据不会写进阅读页，签名 URL 中的凭据参数也不会保留。
+
+只获取账号可访问的内容；不下载视频本体、不提交作业；传承交大只获取明确为 0 积分的资料，并在购买前复查价格。请遵守学校和平台的规定，仅用于个人学习。
+
+## 文档
+
+| 文档 | 说明 |
+| --- | --- |
+| [`docs/schema.md`](docs/schema.md) | 输出目录与文件规范 |
+| [`docs/study-prompts.md`](docs/study-prompts.md) | 学习提示词与 Agent 入口 |
+| [`docs/desktop-packaging.md`](docs/desktop-packaging.md) | Windows / macOS 桌面打包与便携数据 |
+| [`.env.example`](.env.example) | 三个平台的凭据模板 |
+| [`examples/course.json`](examples/course.json) | 课程映射示例 |
+| [`AGENTS.md`](AGENTS.md) | 仓库开发与学习约定 |
+
+## 开发与验证
+
+```bash
+python -m pip install -e ".[web,test]"
 python -m pytest -q
+
+npm --prefix web run build
+npm --prefix web test
 ```
-
-测试覆盖课程归并、网页题面与附件题、题目/提交隔离、HTML/Markdown 链接、跨空间内容去重、SRT-only 导出、私有缓存与旧目录迁移、来源独立刷新、中文 ZIP 解码、安全解压、0 积分获取、完整性检查和凭据隔离。
-
-接口参考 [SJTU-Canvas-Helper](https://github.com/Okabe-Rintarou-0/SJTU-Canvas-Helper) 的课程、网页会话和字幕 LTI 流程，以及 [传承交大](https://share.dyweb.sjtu.cn/) / [选课社区](https://course.sjtu.plus/) 的前端调用。
