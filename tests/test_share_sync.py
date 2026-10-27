@@ -65,8 +65,8 @@ def test_share_sync_related_courses_dedup_free_purchase_download_and_extract(tmp
     summary = report["sources"]["share"]["summary"]
     assert summary == {"courses": 2, "downloaded": 1 if wrong_size else 2, "skipped_paid": 1, "skipped_blocked": 1}
     assert purchases == [11] and sorted(downloads) == [11, 12]
-    assert (job.root / "share/Teacher/Notes-11/notes.zip.extracted/notes.txt").read_text() == "study notes"
-    assert (job.root / "share/Teacher/Notes-11/index.html").is_file()
+    assert (job.root / "share/Notes-11/notes.zip.extracted/notes.txt").read_text() == "study notes"
+    assert (job.root / "share/Notes-11/index.html").is_file()
     assert not list(job.root.rglob("*.json"))
     assert not list(job.root.rglob("*.zip"))
     exported = job.state.get("report")

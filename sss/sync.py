@@ -274,10 +274,8 @@ class Sync:
                     continue
                 def fetch(mid=mid, material=material):
                     detail, url = api.acquire_free(mid)
-                    group, listed = detail.get("class") or {}, material.get("class") or {}
-                    teacher = (group.get("teacher") or listed.get("teacher") or {}).get("name") or "未标注教师"
                     title = detail.get("name") or material.get("name") or detail.get("file_name") or str(mid)
-                    directory = self.root / "share" / safe_name(teacher, 35) / safe_name(f"{title}-{mid}", 75)
+                    directory = self.root / "share" / safe_name(f"{title}-{mid}", 75)
                     filename = detail.get("file_name") or material.get("file_name") or title
                     if filename.casefold() in ("readme.md", "index.html"):
                         filename = "asset-" + filename
@@ -285,7 +283,7 @@ class Sync:
                     text = f"# {title}\n\n{detail.get('description') or ''}\n\n" + "\n".join("- " + item for item in self.file_links(directory, record))
                     text += f"\n\n[原始上传页面](https://share.dyweb.sjtu.cn/course/{cid}/material/{mid})\n"
                     write_pair(self.store, directory, title, text)
-                    entries.append(link(self.root / "share/README.md", directory / "index.html", title + " · " + teacher))
+                    entries.append(link(self.root / "share/README.md", directory / "index.html", title))
                     return record
                 if self.attempt(f"share/{cid}/material/{mid}", fetch):
                     counts["downloaded"] += 1
