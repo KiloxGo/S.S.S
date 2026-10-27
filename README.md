@@ -2,7 +2,7 @@
   <img src="docs/images/logo.svg" width="80" alt="S.S.S">
   <h1>S.S.S</h1>
   <p><strong>SJTU速通套件</strong></p>
-  <p>把 Canvas、传承交大和选课社区的资料，整理成一份可以慢慢读的本地课程档案。</p>
+  <p>综合Canvas、传承交大和选课社区，利用LLM进行检索速通</p>
 
   <p>
     <a href="https://github.com/KiloxGo/S.S.S/actions/workflows/test.yml"><img src="https://github.com/KiloxGo/S.S.S/actions/workflows/test.yml/badge.svg" alt="tests"></a>
@@ -25,13 +25,6 @@
   <img src="docs/images/desktop-courses.png" alt="桌面应用：课程列表、同步状态和课程文件夹入口" width="100%">
   <sub>桌面应用：课程列表、一键同步与学习提示词</sub>
 </p>
-
-<details>
-<summary>平台配置与便携数据目录</summary>
-<p align="center">
-  <img src="docs/images/desktop-settings.png" alt="桌面应用的平台凭据配置与演示数据目录" width="100%">
-</p>
-</details>
 
 ## 它是什么
 
