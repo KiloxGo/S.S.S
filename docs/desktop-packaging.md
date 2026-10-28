@@ -48,6 +48,8 @@ python scripts/build_desktop.py --skip-web-build
 
 输出在 `dist/`：应用目录、ZIP 和 SHA-256 校验文件。已存在的输出不会被覆盖，应先移走旧构建。包内附有 `使用说明.txt`、第三方组件许可与 `build-check.json`。后者记录打包程序自检结果，检查本地接口、JS/CSS、学习模板、ZIP/7Z 解压及全新数据目录的凭据隔离。
 
+Windows 包同时携带 `SSS.exe.config`，允许应用的 .NET 运行时加载随包分发、带下载来源标记的 DLL；无需清除文件来源标记或修改系统设置。升级时与 EXE 一起保留该文件。构建自检会先给所有随包 DLL 写入 Internet zone 标记，再实际加载 Python.NET、WinForms 和 WebView2 程序集，防止“本地能启动，下载解压后失败”。
+
 在有图形会话的构建机可追加 `--window-test`，用打包后的原生窗口自动打开配置、复制提示词并验证系统剪贴板，测试结束后恢复原剪贴板。此测试会短暂显示应用窗口。
 
 ## CI 构建

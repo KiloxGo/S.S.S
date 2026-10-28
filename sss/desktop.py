@@ -162,6 +162,9 @@ def self_test(root, result_path, native_window=False):
     import zipfile
     import py7zr
     import webview  # Verify the window library was included in the bundle.
+    if sys.platform == "win32":
+        # Importing webview alone does not load Python.NET or the WebView2 DLLs.
+        from webview.platforms import winforms, edgechromium
     server = DesktopServer(root)
     try:
         server.start()
@@ -195,6 +198,8 @@ def self_test(root, result_path, native_window=False):
                   "credential_free": True, "archive": True}
         if window_check:
             result["window"] = window_check
+        if sys.platform == "win32":
+            result["native_runtime"] = True
         Path(result_path).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     finally:
         server.stop()
@@ -233,7 +238,11 @@ def check_native_window(server, root):
       }
     })();"""
     window = create_window(server, root)
-    window.events.loaded += lambda: window.run_js(script)
+
+    def run_check():
+        window.run_js(script)
+
+    window.events.loaded += run_check
 
     def close_after_check():
         if not finished.wait(45):

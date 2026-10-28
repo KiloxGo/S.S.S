@@ -1,6 +1,6 @@
 S.S.S — 本地课程资料应用
 
-Windows：解压整个压缩包，打开 SSS 文件夹，双击 SSS.exe。不要只复制 exe；旁边的 _internal 是运行资源。
+Windows：解压整个压缩包，打开 SSS 文件夹，双击 SSS.exe。不要只复制 exe；旁边的 _internal 和 SSS.exe.config 是运行资源。
 macOS：解压后双击 SSS.app。公开分发前应由发布者完成 Apple Developer 签名与公证；当前开发构建不含开发者公证。
 
 首次使用：右上角“平台配置”填写 Canvas Token、传承交大 Token、选课社区 jcourse_session 原始值，然后加载课程。每门课程右侧可同步或打开本地文件夹。

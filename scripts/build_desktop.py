@@ -132,6 +132,7 @@ def main():
     else:
         shutil.copytree(work / "frozen" / "SSS", output / "SSS", symlinks=True)
         executable = output / "SSS" / "SSS.exe"
+        shutil.copyfile(ROOT / "desktop" / "SSS.exe.config", executable.with_suffix(".exe.config"))
         for name in ("License.txt", "readme.txt"):
             source = decoder.parent / name
             if source.exists():
@@ -140,6 +141,12 @@ def main():
     marker.write_text("Keep this file beside the application to store data in SSS-Data.\n", encoding="utf-8")
     shutil.copyfile(ROOT / "desktop" / "使用说明.txt", output / "使用说明.txt")
     third_party_notices(output)
+    marked_dlls = []
+    if sys.platform == "win32":
+        # Reproduce Explorer extraction of a downloaded ZIP; ZIP stores no NTFS streams.
+        marked_dlls = list(executable.parent.rglob("*.dll"))
+        for dll in marked_dlls:
+            Path(str(dll) + ":Zone.Identifier").write_text("[ZoneTransfer]\nZoneId=3\n", encoding="utf-8")
     with tempfile.TemporaryDirectory(prefix="sss-bundle-check-") as temporary:
         result = Path(temporary) / "result.json"
         clean_env = {k: v for k, v in os.environ.items() if not k.startswith("SSS_") and k not in {"PYTHONPATH", "PYTHONHOME"}}
@@ -156,6 +163,8 @@ def main():
         if not report.get("ok") or not report.get("frozen"):
             raise RuntimeError(f"打包自检失败：{report}")
         report.pop("data_dir", None)
+        if sys.platform == "win32":
+            report["download_marked_dlls"] = len(marked_dlls)
         (output / "build-check.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if sys.platform == "darwin":
         run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(output), str(archive))
