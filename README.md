@@ -1,28 +1,39 @@
-## 凭据与边界
+# S.S.S
 
-三个平台凭据怎么填
+**SJTU Study Speedrun** — 上海交通大学课程资料整合与学习辅助工具。
 
-- `SSS_CANVAS_TOKEN`：`oc.sjtu.edu.cn` 账户设置中的 API Token，只填原值，不加 `Bearer `。
-- `SSS_SHARE_TOKEN`：登录 `share.dyweb.sjtu.cn` 后，在开发者工具 Application → Local Storage 读取 `token`，去掉 JSON 外层双引号。
-- `SSS_REVIEWS_COOKIE`：直接粘贴 `course.sjtu.plus` 的 `jcourse_session` 原始值，程序会自动补上 Cookie 名。
+S.S.S 旨在简化课程资料的收集、整理与使用流程，让同学们将更多时间花在学习本身，而不是寻找资料上。
 
-## 文档
+## Features
 
-| 文档 | 说明 |
-| --- | --- |
-| [`docs/schema.md`](docs/schema.md) | 输出目录与文件规范 |
-| [`docs/study-prompts.md`](docs/study-prompts.md) | 学习提示词与 Agent 入口 |
-| [`docs/desktop-packaging.md`](docs/desktop-packaging.md) | Windows / macOS 桌面打包与便携数据 |
-| [`.env.example`](.env.example) | 三个平台的凭据模板 |
-| [`examples/course.json`](examples/course.json) | 课程映射示例 |
-| [`AGENTS.md`](AGENTS.md) | 仓库开发与学习约定 |
+- **多源整合**：从 Canvas、交大云盘及课程评价平台获取课程相关资料。
+- **自动整理**：按学期与课程归档文件，建立统一、可检索的资料目录。
+- **AI 辅助学习**：生成面向 AI Agent 的课程索引与学习指引，便于检索、总结和复习。
+- **本地优先**：资料与平台凭据保存在本地，支持 Windows 和 macOS 桌面应用。
 
-## 开发与验证
+## Getting Started
+
+可从 [GitHub Actions](https://github.com/KiloxGo/S.S.S/actions/workflows/desktop.yml) 获取可用的构建产物，或从源码运行（需要 Python 3.11.8+ 和 Node.js）：
 
 ```bash
-python -m pip install -e ".[web,test]"
-python -m pytest -q
+git clone https://github.com/KiloxGo/S.S.S.git
+cd S.S.S
 
+python -m pip install -e ".[desktop]"
+npm --prefix web ci
 npm --prefix web run build
-npm --prefix web test
+
+sss-desktop
 ```
+
+首次运行需要配置相应平台的访问凭据。
+
+## Documentation
+
+- [课程目录规范](docs/schema.md)
+- [AI 学习指引](docs/study-prompts.md)
+- [桌面应用与构建说明](docs/desktop-packaging.md)
+
+---
+
+*Made for SJTU students. Not affiliated with Shanghai Jiao Tong University.*
